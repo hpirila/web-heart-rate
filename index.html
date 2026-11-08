@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Bluetooth Heart Rate Monitor</title>
+    <style>
+        * { box-sizing: border-box; }
+
+        /* ---------- Theme variables ---------- */
+        :root {
+            --bg: #0d0f14;
+            --bg-elev: #161922;
+            --bg-elev2: #1e222d;
+            --border: #262a36;
+            --border-strong: #383e4e;
+            --text: #f0f2f5;
+            --text-dim: #9aa4b2;
+            --text-faint: #6b7280;
+            --row-alt: #13151c;
+            --row-hover: #1c212c;
+            --accent: #3b82f6;
+            --accent-bg: #1e3a8a;
+            --accent-border: #3b82f6;
+            --accent-text: #93c5fd;
+            --danger-bg: #451a03;
+            --danger-border: #7c2d12;
+            --danger-text: #fca5a5;
+            --hr-red: #ef4444;
+            --hr-blue: #3b82f6;
+            --hr-contrast: #ffffff;
+            --rr-green: #22c55e;
+            --transition-smooth: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg: #f8fafc;
+                --bg-elev: #ffffff;
+                --bg-elev2: #f1f5f9;
+                --border: #e2e8f0;
+                --border-strong: #cbd5e1;
+                --text: #0f172a;
+                --text-dim: #475569;
+                --text-faint: #94a3b8;
+                --row-alt: #f8fafc;
+                --row-hover: #f1f5f9;
+                --accent: #2563eb;
+                --accent-bg: #eff6ff;
+                --accent-border: #bfdbfe;
+                --accent-text: #1d4ed8;
+                --danger-bg: #fef2f2;
+                --danger-border: #fecaca;
+                --danger-text: #991b1b;
+                --hr-red: #dc2626;
+                --hr-blue: #2563eb;
+                --hr-contrast: #0f172a;
+                --rr-green: #16a34a;
+            }
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            overflow: hidden;
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+            padding-bottom: 3.75rem;
+        }
+
+        /* ---------- Section 1: Live HR ---------- */
+        #sectionLive {
+            flex: 1 1 33%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-bottom: 1px solid var(--border);
+            min-height: 0;
+            background: radial-gradient(circle at center, var(--bg-elev) 0%, var(--bg) 100%);
+        }
+        #hrDisplay {
+            font-size: clamp(7rem, 20vw, 16rem);
+            font-weight: 800;
+            line-height: 0.9;
+            letter-spacing: -0.04em;
+            cursor: pointer;
+            user-select: none;
+            transition: var(--transition-smooth);
+            font-variant-numeric: tabular-nums;
+            filter: drop-shadow(0 4px 12px rgba(0,0,0,0.15));
+        }
+        #hrDisplay[data-color="red"]   { color: var(--hr-red); }
+        #hrDisplay[data-color="mid"]   { color: var(--hr-contrast); }
+        #hrDisplay[data-color="blue"]  { color: var(--hr-blue); }
+
+        /* ---------- Section 2: Avg + Timer ---------- */
+        #sectionAvg {
+            flex: 1 1 33%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-bottom: 1px solid var(--border);
+            min-height: 0;
+            gap: 0.3rem;
+            background: var(--bg);
+        }
+        #avgDisplay {
+            font-size: clamp(2.5rem, 7vw, 4.5rem);
+            font-weight: 800;
+            line-height: 1;
+            cursor: pointer;
+            user-select: none;
+            transition: var(--transition-smooth);
+            font-variant-numeric: tabular-nums;
+        }
+        #avgDisplay[data-color="red"]   { color: var(--hr-red); }
+        #avgDisplay[data-color="mid"]   { color: var(--hr-contrast); }
+        #avgDisplay[data-color="blue"]  { color: var(--hr-blue); }
+        #avgLabel {
+            font-size: 0.75rem;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: var(--text-faint);
+            font-weight: 600;
+        }
+        #timerDisplay {
+            font-size: 1.25rem;
+            font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+            color: var(--text-dim);
+            margin-top: 0.3rem;
+            font-variant-numeric: tabular-nums;
+            font-weight: 500;
+        }
+        #timerButtons {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.3rem;
+        }
+        #timerButtons button {
+            font-size: 0.8rem;
+            font-weight: 500;
+            padding: 0.3rem 0.85rem;
+            border: 1px solid var(--border-strong);
+            background: var(--bg-elev2);
+            color: var(--text);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+        }
+        #timerButtons button:hover {
+            background: var(--row-hover);
+            border-color: var(--text-faint);
+        }
+        #timerButtons button:active {
+            background: var(--border);
+            transform: scale(0.97);
+        }
+
+        /* ---------- Section 3: Interactive View (Graph / CSV Table) ---------- */
+        #sectionView {
+            flex: 1 1 33%;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            padding: 0.75rem 1rem;
+            justify-content: flex-start;
+            background: var(--bg);
+        }
+
+        .view-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-elev);
+            overflow: hidden;
+            cursor: pointer;
+            transition: border-color 0.2s ease;
+        }
+        .view-container:hover {
+            border-color: var(--border-strong);
+        }
+
+        /* Graph View */
+        #graphView {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+        }
+        #graphCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        .graph-legend {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            display: flex;
+            gap: 12px;
+            font-size: 0.7rem;
+            font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+            background: rgba(13, 15, 20, 0.75);
+            padding: 4px 8px;
+            border-radius: 6px;
+            backdrop-filter: blur(4px);
+            user-select: none;
+            align-items: center;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .legend-item label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+        }
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        /* CSV View */
+        #csvView {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+        }
+        #tableWrap {
+            flex: 1;
+            overflow-y: scroll;
+            scrollbar-gutter: stable;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-strong) var(--bg-elev2);
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+        }
+        #tableWrap::-webkit-scrollbar { width: 8px; }
+        #tableWrap::-webkit-scrollbar-track {
+            background: var(--bg-elev2);
+        }
+        #tableWrap::-webkit-scrollbar-thumb {
+            background: var(--border-strong);
+            border-radius: 10px;
+        }
+        #tableWrap::-webkit-scrollbar-thumb:hover {
+            background: var(--text-faint);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+            font-size: 0.72rem;
+        }
+        th, td {
+            border-bottom: 1px solid var(--border);
+            padding: 6px 10px;
+            text-align: left;
+            white-space: nowrap;
+        }
+        th {
+            background: var(--bg-elev2);
+            color: var(--text-dim);
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+        }
+        tbody tr:nth-child(even) { background: var(--row-alt); }
+        tbody tr:hover { background: var(--row-hover); }
+        td.raw { color: var(--text-faint); }
+
+        #csvFooter {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.5rem 0.75rem;
+            flex-shrink: 0;
+            background: var(--bg-elev2);
+            border-top: 1px solid var(--border);
+        }
+        #filenameInput {
+            width: 220px;
+            padding: 0.4rem 0.6rem;
+            font-size: 0.78rem;
+            border: 1px solid var(--border-strong);
+            background: var(--bg-elev);
+            color: var(--text);
+            border-radius: 6px;
+            outline: none;
+            transition: var(--transition-smooth);
+        }
+        #filenameInput:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15); }
+        #saveBtn {
+            font-size: 0.78rem;
+            font-weight: 600;
+            padding: 0.4rem 1rem;
+            border: 1px solid var(--accent-border);
+            background: var(--accent-bg);
+            color: var(--accent-text);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+        }
+        #saveBtn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+
+        /* ---------- Bottom bar ---------- */
+        #bottomBar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 3.75rem;
+            background: var(--bg-elev);
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 1.25rem;
+            z-index: 10;
+            box-shadow: 0 -4px 16px rgba(0,0,0,0.1);
+        }
+        #lastDeviceInfo {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 50%;
+            font-weight: 500;
+        }
+        #bottomRight {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+        #helpBtn {
+            font-size: 0.85rem;
+            font-weight: 600;
+            width: 2.2rem;
+            height: 2.2rem;
+            cursor: pointer;
+            border: 1px solid var(--border-strong);
+            background: var(--bg-elev2);
+            color: var(--text);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition-smooth);
+        }
+        #helpBtn:hover { background: var(--row-hover); border-color: var(--text-faint); }
+        #connectBtn {
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 0.5rem 1.25rem;
+            cursor: pointer;
+            border: 1px solid var(--accent-border);
+            background: var(--accent-bg);
+            color: var(--accent-text);
+            border-radius: 8px;
+            transition: var(--transition-smooth);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+        #connectBtn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        #connectBtn.connected {
+            border-color: var(--danger-border);
+            background: var(--danger-bg);
+            color: var(--danger-text);
+        }
+        #connectBtn.connected:hover { filter: brightness(1.1); }
+
+        /* ---------- Help modal ---------- */
+        #helpModal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(4px);
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+        }
+        #helpModal .modalCard {
+            background: var(--bg-elev);
+            color: var(--text);
+            padding: 24px;
+            border-radius: 14px;
+            max-width: 460px;
+            width: 90%;
+            border: 1px solid var(--border);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+            animation: modalPop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes modalPop {
+            0% { transform: scale(0.95); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        #helpModal h3 {
+            margin-top: 0;
+            font-size: 1.15rem;
+            font-weight: 700;
+        }
+        #helpModal p {
+            font-size: 0.875rem;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+        #helpModal details {
+            margin: 12px 0;
+            font-size: 0.85rem;
+            background: var(--bg-elev2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 14px;
+        }
+        #helpModal summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: var(--text);
+        }
+        #helpModal ol {
+            padding-left: 1.2rem;
+            margin: 8px 0 4px 0;
+            color: var(--text-dim);
+        }
+        #helpModal .aiNote {
+            font-size: 0.8rem;
+            color: var(--text-faint);
+            margin-bottom: 12px;
+        }
+        #helpModal .aiLink {
+            display: inline-block;
+            font-size: 0.85rem;
+            font-weight: 500;
+            padding: 9px 16px;
+            border-radius: 8px;
+            background: var(--accent-bg);
+            color: var(--accent-text);
+            border: 1px solid var(--accent-border);
+            text-decoration: none;
+            transition: var(--transition-smooth);
+        }
+        #helpModal .aiLink:hover { filter: brightness(1.1); }
+        #helpModal .modalActions {
+            margin-top: 20px;
+            text-align: right;
+        }
+        #closeHelp {
+            padding: 7px 18px;
+            cursor: pointer;
+            border: 1px solid var(--border-strong);
+            background: var(--bg-elev2);
+            color: var(--text);
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: var(--transition-smooth);
+        }
+        #closeHelp:hover { background: var(--row-hover); border-color: var(--text-faint); }
+
+        /* Hidden log */
+        #log {
+            position: fixed;
+            bottom: 3.75rem;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: #090a0e;
+            color: #d4d4d4;
+            font-family: monospace;
+            font-size: 0.7rem;
+            overflow-y: auto;
+            padding: 0.3rem 0.6rem;
+            white-space: pre-wrap;
+            display: none;
+            border-top: 1px solid var(--border);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Section 1: Live HR -->
+    <div id="sectionLive">
+        <div id="hrDisplay" data-color="red" title="Click to change color">--</div>
+    </div>
+
+    <!-- Section 2: Average + Timer -->
+    <div id="sectionAvg">
+        <div id="avgDisplay" data-color="blue" title="Click to change color">--</div>
+        <div id="avgLabel">Average Heart Rate</div>
+        <div id="timerDisplay">00:00:00</div>
+        <div id="timerButtons">
+            <button id="startTimerBtn">Start</button>
+            <button id="stopTimerBtn">Stop</button>
+            <button id="resetTimerBtn">Reset</button>
+        </div>
+    </div>
+
+    <!-- Section 3: Interactive View (Graph / CSV Table) -->
+    <div id="sectionView">
+        <div class="view-container" id="viewContainer" title="Click to toggle Graph / CSV view">
+            <!-- Graph View -->
+            <div id="graphView">
+                <canvas id="graphCanvas"></canvas>
+                <div class="graph-legend" onclick="event.stopPropagation()">
+                    <div class="legend-item">
+                        <label>
+                            <input type="checkbox" id="hrToggleCheckbox" checked />
+                            <div class="legend-dot" id="legendHrDot" style="background: var(--hr-red);"></div>HR
+                        </label>
+                    </div>
+                    <div class="legend-item">
+                        <label>
+                            <input type="checkbox" id="avgToggleCheckbox" checked />
+                            <div class="legend-dot" id="legendAvgDot" style="background: var(--hr-blue);"></div>Avg HR
+                        </label>
+                    </div>
+                    <div class="legend-item" id="legendRrItem" style="display:none;">
+                        <label>
+                            <input type="checkbox" id="rrToggleCheckbox" checked />
+                            <div class="legend-dot" style="background: var(--rr-green);"></div>RR
+                        </label>
+                    </div>
+                    <div class="legend-item">
+                        <label id="timeToggleLabel" style="cursor: pointer;" title="Click to toggle time format">
+                            <span id="timeFormatText">Elapsed (s)</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CSV View -->
+            <div id="csvView">
+                <div id="tableWrap">
+                    <table id="recordTable">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Time</th>
+                                <th>HR</th>
+                                <th>Flags</th>
+                                <th>Contact</th>
+                                <th>Energy</th>
+                                <th>RR</th>
+                                <th>Raw</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+                <div id="csvFooter" onclick="event.stopPropagation()">
+                    <input type="text" id="filenameInput" value="hr_YYYYMMDD_HHMMSS.csv" />
+                    <button id="saveBtn">Save CSV</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden log -->
+    <div id="log"></div>
+
+    <!-- Bottom Bar -->
+    <div id="bottomBar">
+        <span id="lastDeviceInfo"></span>
+        <div id="bottomRight">
+            <button id="helpBtn" title="Help">?</button>
+            <button id="connectBtn">Connect</button>
+        </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div id="helpModal">
+        <div class="modalCard">
+            <h3>How to enable heart rate broadcasting?</h3>
+
+            <p>
+                Almost every watch or belt uses the same idea: switch it into
+                <strong>heart-rate broadcast / sharing mode</strong>, keep that screen open,
+                and make sure no other app (phone, gym machine, etc.) is connected to it.
+                Then come back here and click <strong>Connect</strong>.
+            </p>
+
+            <details>
+                <summary>Example: Polar Ignite 3</summary>
+                <ol>
+                    <li>Press the button → <strong>Start training</strong> → pick any sport</li>
+                    <li>Open <strong>Settings</strong> on the pre-training screen</li>
+                    <li>Select <strong>Share HR with other devices</strong></li>
+                    <li>Select <strong>Use watch as heart rate sensor</strong></li>
+                    <li>Keep the watch on that screen, then click Connect here</li>
+                </ol>
+            </details>
+
+            <p class="aiNote">Different device? Ask an AI — it will look up your model's manual:</p>
+
+            <a class="aiLink"
+               href="https://www.google.com/search?udm=50&q=How%20do%20I%20enable%20heart%20rate%20broadcast%20or%20heart%20rate%20sharing%20mode%20on%20my%20smartwatch%20or%20heart%20rate%20belt%3F"
+               target="_blank"
+               rel="noopener">
+                Ask Google AI about HR sharing
+            </a>
+
+            <div class="modalActions">
+                <button id="closeHelp">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const hrDisplay = document.getElementById('hrDisplay');
+        const avgDisplay = document.getElementById('avgDisplay');
+        const timerDisplay = document.getElementById('timerDisplay');
+        const tableBody = document.getElementById('tableBody');
+        const connectBtn = document.getElementById('connectBtn');
+        const lastDeviceInfo = document.getElementById('lastDeviceInfo');
+        const saveBtn = document.getElementById('saveBtn');
+        const filenameInput = document.getElementById('filenameInput');
+        const startTimerBtn = document.getElementById('startTimerBtn');
+        const stopTimerBtn = document.getElementById('stopTimerBtn');
+        const resetTimerBtn = document.getElementById('resetTimerBtn');
+        const logDiv = document.getElementById('log');
+        const helpBtn = document.getElementById('helpBtn');
+        const helpModal = document.getElementById('helpModal');
+        const closeHelp = document.getElementById('closeHelp');
+
+        const viewContainer = document.getElementById('viewContainer');
+        const graphView = document.getElementById('graphView');
+        const csvView = document.getElementById('csvView');
+        const graphCanvas = document.getElementById('graphCanvas');
+        const ctx = graphCanvas.getContext('2d');
+        const legendHrDot = document.getElementById('legendHrDot');
+        const legendAvgDot = document.getElementById('legendAvgDot');
+        const legendRrItem = document.getElementById('legendRrItem');
+        const hrToggleCheckbox = document.getElementById('hrToggleCheckbox');
+        const avgToggleCheckbox = document.getElementById('avgToggleCheckbox');
+        const rrToggleCheckbox = document.getElementById('rrToggleCheckbox');
+        const timeToggleLabel = document.getElementById('timeToggleLabel');
+        const timeFormatText = document.getElementById('timeFormatText');
+
+        // X-Axis time format state: 'elapsed' or 'clock'
+        let timeFormat = 'elapsed';
+
+        // ---------- View switching & Controls ----------
+        viewContainer.addEventListener('click', () => {
+            if (csvView.style.display === 'flex') {
+                csvView.style.display = 'none';
+                graphView.style.display = 'flex';
+                drawGraph();
+            } else {
+                graphView.style.display = 'none';
+                csvView.style.display = 'flex';
+            }
+        });
+
+        hrToggleCheckbox.addEventListener('change', drawGraph);
+        avgToggleCheckbox.addEventListener('change', drawGraph);
+        rrToggleCheckbox.addEventListener('change', drawGraph);
+
+        timeToggleLabel.addEventListener('click', (e) => {
+            e.stopPropagation();
+            timeFormat = timeFormat === 'elapsed' ? 'clock' : 'elapsed';
+            timeFormatText.textContent = timeFormat === 'elapsed' ? 'Elapsed (s)' : 'Clock Time';
+            drawGraph();
+        });
+
+        // ---------- Help modal ----------
+        helpBtn.addEventListener('click', () => {
+            helpModal.style.display = 'flex';
+        });
+        closeHelp.addEventListener('click', () => {
+            helpModal.style.display = 'none';
+        });
+        helpModal.addEventListener('click', (e) => {
+            if (e.target === helpModal) helpModal.style.display = 'none';
+        });
+
+        // ---------- Theme-aware color cycling & Legend update ----------
+        const COLOR_CYCLE = ['red', 'mid', 'blue'];
+        function getComputedColor(colorKey) {
+            const temp = document.createElement('div');
+            temp.style.display = 'none';
+            if (colorKey === 'red') temp.style.color = 'var(--hr-red)';
+            else if (colorKey === 'mid') temp.style.color = 'var(--hr-contrast)';
+            else if (colorKey === 'blue') temp.style.color = 'var(--hr-blue)';
+            document.body.appendChild(temp);
+            const computed = window.getComputedStyle(temp).color;
+            document.body.removeChild(temp);
+            return computed;
+        }
+
+        function updateLegendColors() {
+            const hrCol = hrDisplay.getAttribute('data-color') || 'red';
+            const avgCol = avgDisplay.getAttribute('data-color') || 'blue';
+            legendHrDot.style.background = getComputedColor(hrCol);
+            legendAvgDot.style.background = getComputedColor(avgCol);
+        }
+
+        function attachColorToggle(el) {
+            el.addEventListener('click', () => {
+                const current = el.getAttribute('data-color') || 'red';
+                const idx = COLOR_CYCLE.indexOf(current);
+                const next = COLOR_CYCLE[(idx + 1) % COLOR_CYCLE.length];
+                el.setAttribute('data-color', next);
+                updateLegendColors();
+                drawGraph();
+            });
+        }
+        attachColorToggle(hrDisplay);
+        attachColorToggle(avgDisplay);
+        updateLegendColors();
+
+        // ---------- State ----------
+        let device = null;
+        let characteristic = null;
+        let recordCount = 0;
+        let allRecords = [];
+
+        let timerRunning = false;
+        let timerStartTime = null;
+        let timerElapsedMs = 0;
+        let timerInterval = null;
+        let avgSum = 0;
+        let avgCount = 0;
+
+        const LAST_DEVICE_KEY = 'hr_last_device_id';
+        const LAST_DEVICE_NAME_KEY = 'hr_last_device_name';
+        const MAX_DOM_ROWS = 50;
+
+        function log(msg, type = 'info') {
+            const t = new Date().toLocaleTimeString();
+            const span = document.createElement('span');
+            span.className = 'log-' + type;
+            span.textContent = `[${t}] ${msg}\n`;
+            logDiv.appendChild(span);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function bytesToHex(bytes) {
+            return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
+        }
+
+        function makeDefaultFilename() {
+            const d = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            const date = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
+            const time = `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+            return `hr_${date}_${time}.csv`;
+        }
+        filenameInput.value = makeDefaultFilename();
+
+        function parseHeartRate(dataView) {
+            const flags = dataView.getUint8(0);
+            const isUint16 = (flags & 0x01) !== 0;
+            const sensorContactSupported = (flags & 0x04) !== 0;
+            const sensorContactDetected = (flags & 0x02) !== 0;
+            const energyExpendedPresent = (flags & 0x08) !== 0;
+            const rrIntervalPresent = (flags & 0x10) !== 0;
+
+            let offset = 1;
+            let heartRate;
+            if (isUint16) {
+                heartRate = dataView.getUint16(offset, true);
+                offset += 2;
+            } else {
+                heartRate = dataView.getUint8(offset);
+                offset += 1;
+            }
+
+            let energyExpended = null;
+            if (energyExpendedPresent && offset + 2 <= dataView.byteLength) {
+                energyExpended = dataView.getUint16(offset, true);
+                offset += 2;
+            }
+
+            const rrIntervals = [];
+            if (rrIntervalPresent) {
+                while (offset + 2 <= dataView.byteLength) {
+                    rrIntervals.push(dataView.getUint16(offset, true));
+                    offset += 2;
+                }
+            }
+
+            let sensorContactText = 'N/A';
+            if (sensorContactSupported) {
+                sensorContactText = sensorContactDetected ? 'Yes' : 'No';
+            } else {
+                sensorContactText = 'Not supported';
+            }
+
+            return { flags, heartRate, sensorContactText, energyExpended, rrIntervals };
+        }
+
+        function addRecordToTable(rec) {
+            const tr = document.createElement('tr');
+            const cells = [
+                rec.count,
+                rec.time,
+                rec.hr,
+                '0x' + rec.flags.toString(16).padStart(2, '0'),
+                rec.contact,
+                rec.energy ?? '-',
+                rec.rr.join(', ') || '-',
+                rec.raw
+            ];
+            cells.forEach((text, i) => {
+                const td = document.createElement('td');
+                td.textContent = text;
+                if (i === 7) td.className = 'raw';
+                tr.appendChild(td);
+            });
+            tableBody.appendChild(tr);
+
+            while (tableBody.children.length > MAX_DOM_ROWS) {
+                tableBody.removeChild(tableBody.firstChild);
+            }
+
+            const wrap = document.getElementById('tableWrap');
+            wrap.scrollTop = wrap.scrollHeight;
+        }
+
+        // ---------- Graph Drawing ----------
+        function drawGraph() {
+            const dpr = window.devicePixelRatio || 1;
+            const width = graphView.clientWidth;
+            const height = graphView.clientHeight;
+
+            if (graphCanvas.width !== width * dpr || graphCanvas.height !== height * dpr) {
+                graphCanvas.width = width * dpr;
+                graphCanvas.height = height * dpr;
+            }
+
+            ctx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
+            ctx.save();
+            ctx.scale(dpr, dpr);
+
+            if (allRecords.length === 0) {
+                ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-faint').trim();
+                ctx.font = '13px system-ui, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('Waiting for data...', width / 2, height / 2);
+                ctx.restore();
+                return;
+            }
+
+            const hasRrData = allRecords.some(r => r.rr && r.rr.length > 0);
+            legendRrItem.style.display = hasRrData ? 'flex' : 'none';
+            const showRr = hasRrData && rrToggleCheckbox.checked;
+            const showHr = hrToggleCheckbox.checked;
+            const showAvg = avgToggleCheckbox.checked;
+
+            const padding = { top: 25, right: showRr ? 45 : 15, bottom: 25, left: 40 };
+            const graphW = width - padding.left - padding.right;
+            const graphH = height - padding.top - padding.bottom;
+
+            const startTime = allRecords[0].timestamp;
+            const endTime = allRecords[allRecords.length - 1].timestamp;
+            const timeSpan = Math.max(1000, endTime - startTime);
+
+            // HR scale (left Y axis)
+            let minHr = Math.min(...allRecords.map(r => r.hr), ...allRecords.map(r => r.avgHr || r.hr));
+            let maxHr = Math.max(...allRecords.map(r => r.hr), ...allRecords.map(r => r.avgHr || r.hr));
+            const hrPaddingRange = Math.max(5, (maxHr - minHr) * 0.1);
+            minHr = Math.max(30, Math.floor(minHr - hrPaddingRange));
+            maxHr = Math.min(220, Math.ceil(maxHr + hrPaddingRange));
+
+            // RR scale (right Y axis)
+            let minRr = 0, maxRr = 1000;
+            if (showRr) {
+                const allRrVals = allRecords.flatMap(r => r.rr);
+                if (allRrVals.length > 0) {
+                    minRr = Math.min(...allRrVals);
+                    maxRr = Math.max(...allRrVals);
+                    const rrRange = Math.max(50, (maxRr - minRr) * 0.1);
+                    minRr = Math.max(0, Math.floor(minRr - rrRange));
+                    maxRr = Math.ceil(maxRr + rrRange);
+                }
+            }
+
+            // Grid line colors and fonts
+            ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--border').trim();
+            ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-faint').trim();
+            ctx.font = '10px ui-monospace, monospace';
+            ctx.lineWidth = 1;
+
+            // 1. Horizontal HR Grid & Y-Axis Labels
+            for (let i = 0; i <= 4; i++) {
+                const val = minHr + (maxHr - minHr) * (i / 4);
+                const y = padding.top + graphH - (graphH * (i / 4));
+                ctx.beginPath();
+                ctx.moveTo(padding.left, y);
+                ctx.lineTo(width - padding.right, y);
+                ctx.stroke();
+
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(Math.round(val), padding.left - 6, y);
+            }
+
+            // 2. Right Y-Axis RR Labels (if toggled on)
+            if (showRr) {
+                for (let i = 0; i <= 4; i++) {
+                    const val = minRr + (maxRr - minRr) * (i / 4);
+                    const y = padding.top + graphH - (graphH * (i / 4));
+                    ctx.textAlign = 'left';
+                    ctx.fillText(Math.round(val), width - padding.right + 6, y);
+                }
+            }
+
+            // 3. X-Axis Time Labels (Bottom)
+            const numTimeTicks = Math.min(5, allRecords.length);
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            for (let i = 0; i < numTimeTicks; i++) {
+                const ratio = i / Math.max(1, numTimeTicks - 1);
+                const tickTime = startTime + timeSpan * ratio;
+                const x = padding.left + ratio * graphW;
+
+                let label = '';
+                if (timeFormat === 'elapsed') {
+                    const elapsedSec = Math.round((tickTime - startTime) / 1000);
+                    label = `${elapsedSec}s`;
+                } else {
+                    const d = new Date(tickTime);
+                    const pad = n => String(n).padStart(2, '0');
+                    label = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                }
+                ctx.fillText(label, x, height - padding.bottom + 6);
+            }
+
+            const getX = (t) => padding.left + ((t - startTime) / timeSpan) * graphW;
+            const getYHr = (hr) => padding.top + graphH - ((hr - minHr) / (maxHr - minHr || 1)) * graphH;
+            const getYRr = (rr) => padding.top + graphH - ((rr - minRr) / (maxRr - minRr || 1)) * graphH;
+
+            // Draw RR Line (if toggled on)
+            if (showRr) {
+                const rrComputedColor = getComputedStyle(document.documentElement).getPropertyValue('--rr-green').trim() || '#22c55e';
+                ctx.strokeStyle = rrComputedColor;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                let started = false;
+                allRecords.forEach(r => {
+                    if (r.rr && r.rr.length > 0) {
+                        const avgRrVal = r.rr.reduce((a, b) => a + b, 0) / r.rr.length;
+                        const x = getX(r.timestamp);
+                        const y = getYRr(avgRrVal);
+                        if (!started) { ctx.moveTo(x, y); started = true; }
+                        else { ctx.lineTo(x, y); }
+                    }
+                });
+                ctx.stroke();
+            }
+
+            // Draw Average HR Line (Solid line if toggled on)
+            if (showAvg) {
+                const avgColKey = avgDisplay.getAttribute('data-color') || 'blue';
+                const avgColor = getComputedColor(avgColKey);
+                ctx.strokeStyle = avgColor;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                allRecords.forEach((r, idx) => {
+                    const x = getX(r.timestamp);
+                    const y = getYHr(r.avgHr || r.hr);
+                    if (idx === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+            }
+
+            // Draw Live HR Line (Solid line if toggled on)
+            if (showHr) {
+                const hrColKey = hrDisplay.getAttribute('data-color') || 'red';
+                const hrColor = getComputedColor(hrColKey);
+                ctx.strokeStyle = hrColor;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                allRecords.forEach((r, idx) => {
+                    const x = getX(r.timestamp);
+                    const y = getYHr(r.hr);
+                    if (idx === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+
+        function handleHeartRate(event) {
+            const value = event.target.value;
+            const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+            const rawHex = bytesToHex(bytes);
+
+            let parsed;
+            try {
+                parsed = parseHeartRate(value);
+            } catch (e) {
+                log(`Parse error: ${e.message} | Raw: ${rawHex}`, 'error');
+                return;
+            }
+
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString();
+
+            // Check if recording is active based on Average HR section (timerRunning)
+            if (timerRunning) {
+                recordCount++;
+                avgSum += parsed.heartRate;
+                avgCount++;
+                const currentAvg = Math.round(avgSum / avgCount);
+                avgDisplay.textContent = currentAvg;
+
+                const record = {
+                    count: recordCount,
+                    time: timeStr,
+                    hr: parsed.heartRate,
+                    avgHr: currentAvg,
+                    flags: parsed.flags,
+                    contact: parsed.sensorContactText,
+                    energy: parsed.energyExpended,
+                    rr: parsed.rrIntervals,
+                    raw: rawHex,
+                    timestamp: now.getTime()
+                };
+
+                allRecords.push(record);
+                addRecordToTable(record);
+
+                if (graphView.style.display !== 'none') {
+                    drawGraph();
+                }
+
+                log(`#${recordCount} HR=${parsed.heartRate} Avg=${currentAvg} flags=0x${parsed.flags.toString(16).padStart(2,'0')} raw=${rawHex}`);
+            }
+
+            hrDisplay.textContent = parsed.heartRate;
+        }
+
+        function updateTimerDisplay() {
+            let ms = timerElapsedMs;
+            if (timerRunning && timerStartTime) {
+                ms += Date.now() - timerStartTime;
+            }
+            const totalSec = Math.floor(ms / 1000);
+            const h = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+            const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+            const s = String(totalSec % 60).padStart(2, '0');
+            timerDisplay.textContent = `${h}:${m}:${s}`;
+        }
+
+        startTimerBtn.addEventListener('click', () => {
+            if (timerRunning) return;
+            timerRunning = true;
+            timerStartTime = Date.now();
+            timerInterval = setInterval(updateTimerDisplay, 200);
+            updateTimerDisplay();
+            log('Recording started via timer.');
+        });
+
+        stopTimerBtn.addEventListener('click', () => {
+            if (!timerRunning) return;
+            timerElapsedMs += Date.now() - timerStartTime;
+            timerRunning = false;
+            timerStartTime = null;
+            clearInterval(timerInterval);
+            timerInterval = null;
+            updateTimerDisplay();
+            log('Recording stopped via timer.');
+        });
+
+        resetTimerBtn.addEventListener('click', () => {
+            timerRunning = false;
+            timerStartTime = null;
+            timerElapsedMs = 0;
+            clearInterval(timerInterval);
+            timerInterval = null;
+            updateTimerDisplay();
+            avgSum = 0;
+            avgCount = 0;
+            avgDisplay.textContent = '--';
+            tableBody.innerHTML = '';
+            recordCount = 0;
+            allRecords = [];
+            hrDisplay.textContent = '--';
+            drawGraph();
+            log('Timer and table reset.');
+        });
+
+        saveBtn.addEventListener('click', () => {
+            if (allRecords.length === 0) {
+                alert('No data to save.');
+                return;
+            }
+            const header = 'count,time,hr,avg_hr,flags,contact,energy,rr,raw\n';
+            const rows = allRecords.map(r => {
+                return [
+                    r.count,
+                    `"${r.time}"`,
+                    r.hr,
+                    r.avgHr ?? '',
+                    '0x' + r.flags.toString(16).padStart(2, '0'),
+                    `"${r.contact}"`,
+                    r.energy ?? '',
+                    `"${r.rr.join(' ')}"`,
+                    `"${r.raw}"`
+                ].join(',');
+            }).join('\n');
+            const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            let name = filenameInput.value.trim() || makeDefaultFilename();
+            if (!name.toLowerCase().endsWith('.csv')) name += '.csv';
+            a.download = name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        function onDisconnected() {
+            log('Device disconnected.', 'warn');
+            connectBtn.textContent = 'Connect';
+            connectBtn.classList.remove('connected');
+            lastDeviceInfo.textContent = '';
+            hrDisplay.textContent = '--';
+            if (characteristic) {
+                characteristic.removeEventListener('characteristicvaluechanged', handleHeartRate);
+                characteristic = null;
+            }
+            if (timerRunning) {
+                stopTimerBtn.click();
+            }
+        }
+
+        async function connectToDevice(dev) {
+            if (!dev) return false;
+            try {
+                log(`Connecting to ${dev.name || 'Unnamed'}...`);
+                const server = await dev.gatt.connect();
+                const service = await server.getPrimaryService('heart_rate');
+                characteristic = await service.getCharacteristic('heart_rate_measurement');
+                await characteristic.startNotifications();
+                characteristic.addEventListener('characteristicvaluechanged', handleHeartRate);
+                log('Connected and listening.', 'ok');
+                return true;
+            } catch (e) {
+                log(`Connect failed: ${e.name} - ${e.message}`, 'error');
+                return false;
+            }
+        }
+
+        connectBtn.addEventListener('click', async () => {
+            if (device && device.gatt.connected) {
+                log('Disconnecting...');
+                device.gatt.disconnect();
+                return;
+            }
+
+            localStorage.removeItem(LAST_DEVICE_KEY);
+            localStorage.removeItem(LAST_DEVICE_NAME_KEY);
+            lastDeviceInfo.textContent = '';
+
+            if (!navigator.bluetooth) {
+                alert('Web Bluetooth not available in this browser.');
+                return;
+            }
+
+            try {
+                log('Requesting device...');
+                device = await navigator.bluetooth.requestDevice({
+                    filters: [{ services: ['heart_rate'] }],
+                    optionalServices: ['battery_service', 'device_information']
+                });
+                const devName = device.name || 'Unnamed';
+                log(`Selected: ${devName} (${device.id})`, 'ok');
+
+                localStorage.setItem(LAST_DEVICE_KEY, device.id);
+                localStorage.setItem(LAST_DEVICE_NAME_KEY, devName);
+                lastDeviceInfo.textContent = ` ${devName}`;
+
+                device.addEventListener('gattserverdisconnected', onDisconnected);
+
+                const ok = await connectToDevice(device);
+                if (ok) {
+                    connectBtn.textContent = 'Disconnect';
+                    connectBtn.classList.add('connected');
+                } else {
+                    connectBtn.textContent = 'Connect';
+                    connectBtn.classList.remove('connected');
+                }
+            } catch (e) {
+                log(`Request/connect error: ${e.name} - ${e.message}`, 'error');
+                connectBtn.textContent = 'Connect';
+                connectBtn.classList.remove('connected');
+            }
+        });
+
+        async function tryAutoReconnect() {
+            const savedId = localStorage.getItem(LAST_DEVICE_KEY);
+            const savedName = localStorage.getItem(LAST_DEVICE_NAME_KEY);
+            if (!savedId || !savedName) return;
+
+            lastDeviceInfo.textContent = ` ${savedName} (auto-reconnecting…)`;
+            log(`Attempting auto-reconnect to ${savedName}...`);
+
+            if (!navigator.bluetooth || !navigator.bluetooth.getDevices) {
+                lastDeviceInfo.textContent = ` ${savedName} (auto-reconnect unsupported)`;
+                return;
+            }
+
+            try {
+                const devices = await navigator.bluetooth.getDevices();
+                const match = devices.find(d => d.id === savedId);
+                if (!match) {
+                    lastDeviceInfo.textContent = ` ${savedName} (not found — click Connect)`;
+                    log('Saved device not in getDevices() list.', 'warn');
+                    return;
+                }
+                device = match;
+                device.addEventListener('gattserverdisconnected', onDisconnected);
+                const ok = await connectToDevice(device);
+                if (ok) {
+                    connectBtn.textContent = 'Disconnect';
+                    connectBtn.classList.add('connected');
+                    lastDeviceInfo.textContent = `Connected: ${savedName}`;
+                } else {
+                    lastDeviceInfo.textContent = ` ${savedName} (auto-connect failed — click Connect)`;
+                }
+            } catch (e) {
+                log(`Auto-reconnect error: ${e.name} - ${e.message}`, 'warn');
+                lastDeviceInfo.textContent = ` ${savedName} (auto-reconnect failed)`;
+            }
+        }
+
+        updateTimerDisplay();
+        window.addEventListener('load', () => {
+            setTimeout(tryAutoReconnect, 500);
+            drawGraph();
+        });
+        window.addEventListener('resize', () => {
+            drawGraph();
+        });
+    </script>
+</body>
+</html>
